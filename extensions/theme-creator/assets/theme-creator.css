@@ -22,6 +22,7 @@
 .hwx-tc-filelabel:hover .hwx-tc-filelabel-text{background:var(--hover-bg,rgba(127,127,127,.18));border-color:var(--border,rgba(127,127,127,.4))}
 .hwx-tc-bg-none{color:var(--muted,#888);font-size:12px;font-style:italic}
 .hwx-tc-bg-preview-wrap{display:inline-flex;align-items:center;gap:8px}
+.hwx-tc-bg-preview-wrap[hidden],.hwx-tc-bg-none[hidden]{display:none!important}
 .hwx-tc-bg-preview{width:48px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border2,rgba(127,127,127,.3));background:var(--border2,rgba(127,127,127,.3))}
 .hwx-tc-remove-img{font-size:11px;color:var(--error,#e5534b)}
 .hwx-tc-glass-section,.hwx-tc-blur-section{margin-top:12px}
