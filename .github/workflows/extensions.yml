@@ -66,6 +66,9 @@ jobs:
           node scripts/test-typography-configure.mjs
           node scripts/test-typography.mjs
 
+      - name: Test Theme Creator Configure contract
+        run: node scripts/test-theme-creator-configure.mjs
+
       - name: Test Message Pins observer sync
         run: node scripts/test-message-pins-sync.mjs
 
@@ -198,6 +201,12 @@ jobs:
           HERMES_CORE_DIR: .ci/hermes-webui-core
           COMPATIBILITY_EVIDENCE_DIR: compatibility-evidence
         run: python tests/compatibility/typography_smoke.py
+
+      - name: Run Theme Creator Configure browser compatibility smoke
+        env:
+          HERMES_CORE_DIR: .ci/hermes-webui-core
+          COMPATIBILITY_EVIDENCE_DIR: compatibility-evidence
+        run: python tests/compatibility/theme_creator_smoke.py
 
       - name: Upload browser compatibility evidence
         if: always()

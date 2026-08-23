@@ -13,7 +13,9 @@ extension system is for.
 
 ## What It Does
 
-- Adds a rail button that opens the Theme Creator panel.
+- Adds a **Configure** entry under Settings → Extensions → Installed. The entry
+  opens the Theme Creator editor through Core's authenticated E0 Configure
+  capability; it does not add a permanent rail control.
 - A curated set of color inputs (background, surfaces, text, muted, accent,
   borders, your-message bubble), each with a color picker + hex field.
 - **Optional background image upload**: pick a JPEG/PNG from your device; it's
@@ -64,9 +66,13 @@ System Default base modes. The block is refreshed on register/save/preview/delet
 ## Dependency
 
 Requires the core **theme-registration capability** (`window.registerHermesSkin`),
-added in `nesquena/hermes-webui` **PR #5100**. Without it, the panel still opens
-and you can design a theme, but a notice explains it can't be applied yet (the
-extension does nothing destructive).
+added in `nesquena/hermes-webui` **PR #5100**, and the authenticated E0 identity /
+Configure capability (`window.hermesExt.register('theme-creator')` with
+`settings.registerConfigure`). On a Core build that lacks
+`hermesExt/registerConfigure`, the extension fails closed: it creates no rail
+fallback and no retry timer. The programmatic `.open()` API still opens the
+editor, and saved themes remain available through the existing local collection
+and `registerHermesSkin` registration path.
 
 ## Current Shape
 
@@ -74,7 +80,8 @@ extension does nothing destructive).
 Hermes WebUI page
   -> manifest-bundled extension assets
   -> /extensions/assets/theme-creator.js + .css
-  -> rail button -> editor panel (color pickers + optional image upload + live preview)
+  -> Settings → Extensions → Installed → Configure
+  -> editor panel (color pickers + optional image upload + live preview)
   -> window.registerHermesSkin({...derived tokens...})  -> native Appearance picker
   -> managed <style> element: hwxThemeCreatorBgStyles (root background-image + semi-transparent vars + backdrop-filter blur)
   -> localStorage: hermes-ext-custom-themes (your saved themes)
@@ -95,8 +102,10 @@ cd /path/to/hermes-webui
 HERMES_WEBUI_EXTENSION_DIR=/path/to/hermes-webui-extensions/extensions/theme-creator HERMES_WEBUI_EXTENSION_MANIFEST=manifest.json ./start.sh
 ```
 
-Click the Theme Creator rail button, design a theme, Live preview, then Save. It
-appears in Settings → Appearance.
+Open Settings → Extensions → Installed → Theme Creator → **Configure**, design a
+theme, Live preview, then Save. It appears in Settings → Appearance. On an older
+Core without the Configure hook, use `window.HermesThemeCreatorExtension.open()`
+from trusted local programmatic code; no legacy rail control is created.
 
 ## Controls
 
@@ -118,7 +127,8 @@ back to default).
 
 This is trusted local code. Current disclosed behavior:
 
-- creates extension-owned DOM (a rail button + the editor panel)
+- creates extension-owned DOM (the editor panel opened by Configure or the
+  programmatic API)
 - calls `window.registerHermesSkin(...)` with derived, sanitized color tokens
 - injects a single extension-managed `<style>` element:
   - `hwxThemeCreatorBgStyles` for all per-theme overrides (root background image,
@@ -142,8 +152,13 @@ This is trusted local code. Current disclosed behavior:
 ## Compatibility
 
 - manifest-bundled extension assets + same-origin serving under `/extensions/`
-- the left rail (`.rail`) to host the button
+- Core's authenticated E0 identity and Configure capability:
+  `window.hermesExt.register('theme-creator')` plus
+  `settings.registerConfigure(handler)`
 - the core theme-registration capability (`window.registerHermesSkin`, PR #5100)
+- older Core builds without `hermesExt/registerConfigure` fail closed for UI
+  entry-point registration; programmatic `.open()` and local saved-theme
+  storage remain available
 - uses the core `_pickSkin()` to apply when available, falling back to setting
   `data-skin` + `hermes-skin` directly
 
@@ -158,17 +173,24 @@ python3 -m json.tool extensions/theme-creator/extension.json
 python3 -m json.tool extensions/theme-creator/manifest.json
 ```
 
-Manual verification (on a WebUI build with PR #5100):
+Manual verification (on a WebUI build with the E0 Configure and PR #5100 capabilities):
 
-- the rail button opens the editor; color pickers + hex fields stay in sync
+- Settings → Extensions → Installed shows one Configure button and Diagnostics
+  shows none; Configure opens the editor and the button is pending while it is open
+- the Configure editor opens; color pickers + hex fields stay in sync
 - Live preview applies the theme app-wide; Stop preview reverts
 - Save registers the theme into Settings → Appearance and applies it
 - saved themes can be applied / edited / deleted
 - themes persist across a reload and re-register into the picker on load
+- X, Escape, and backdrop close paths roll back an active preview before the
+  Configure promise settles; Core restores the Configure opener focus once
+- on an older Core without `hermesExt/registerConfigure`, no rail or retry timer
+  appears and the programmatic API remains usable
 
 ## Known Limitations
 
-- Requires the core theme-registration capability (PR #5100).
+- Requires the core theme-registration capability (PR #5100) for native skin
+  registration and the E0 Configure capability for the Settings entry point.
 - Curated inputs with derived tokens (not every raw token is individually
   editable) — a deliberate usability trade-off.
 - Themes are per-browser (`localStorage`), not synced across devices.

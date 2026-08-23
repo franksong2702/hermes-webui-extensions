@@ -6,7 +6,7 @@
   window.__hermesThemeCreatorLoaded = true
 
   const EXT = 'theme-creator', STORE_KEY = 'hermes-ext-custom-themes', KEY_PREFIX = 'custom-'
-  const RAIL_BTN_ID = 'hwxThemeCreatorRailBtn', PANEL_ID = 'hwxThemeCreatorPanel', BG_STYLE_ID = 'hwxThemeCreatorBgStyles'
+  const PANEL_ID = 'hwxThemeCreatorPanel', BG_STYLE_ID = 'hwxThemeCreatorBgStyles'
   const MAX_IMAGE_DIM = 1920, IMAGE_QUALITY = 0.7, MAX_THEMES = 50, MAX_STORE_BYTES = 2 * 1024 * 1024
   const THEME_KEY_RE = /^custom-[a-z0-9_-]+$/
   const DATA_IMAGE_RE = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/
@@ -19,7 +19,8 @@
     { id: 'border', label: 'Borders', def: '#2a2a3a' },
     { id: 'userBubble', label: 'Your message bubble', def: '#26314a' },
   ]
-  let editing = null, previewKey = null, prevSkinBeforePreview = null, _currentBgImage = null, _currentGlassOpacity = .08, _currentBlur = 20
+  let editing = null, previewKey = null, prevSkinBeforePreview = null, configureResolve = null, initialized = false
+  let _currentBgImage = null, _currentGlassOpacity = .08, _currentBlur = 20
 
   // ── helpers ──
   const $ = (s, p = document) => p.querySelector(s)
@@ -166,20 +167,6 @@
     return n
   }
 
-  // ── rail button ──
-  function ensureRailButton() {
-    if (document.getElementById(RAIL_BTN_ID)) return
-    const rail = document.querySelector('.rail')
-    if (!rail) return
-    const btn = document.createElement('button')
-    btn.id = RAIL_BTN_ID; btn.type = 'button'; btn.className = 'rail-btn nav-tab has-tooltip hwx-tc-rail'
-    btn.dataset.tooltip = 'Theme Creator'; btn.setAttribute('aria-label', 'Theme Creator')
-    btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="6.5" cy="11.5" r="2.5"/><circle cx="16.5" cy="14.5" r="2.5"/><path d="M3 21h18"/></svg>'
-    btn.addEventListener('click', ev => { ev.preventDefault(); openPanel() })
-    const spacer = rail.querySelector('.rail-spacer')
-    if (spacer) rail.insertBefore(btn, spacer); else rail.appendChild(btn)
-  }
-
   // ── editor panel ──
   function defaultBase() { const b = {}; FIELDS.forEach(f => { b[f.id] = f.def }); b.bgImage = null; b.glassOpacity = .08; b.blur = 20; return b }
   function currentBaseFromInputs() {
@@ -191,6 +178,7 @@
 
   function openPanel() {
     closePanel(); editing = null; _currentBgImage = null; _currentGlassOpacity = .08; _currentBlur = 20
+    if (!document.body) return false
     const panel = document.createElement('div')
     panel.id = PANEL_ID; panel.className = 'hwx-tc-panel'
     panel.innerHTML =
@@ -204,9 +192,20 @@
     panel.addEventListener('click', e => { if (e.target === panel) closePanel() })
     document.addEventListener('keydown', escClose, true)
     renderEditor(); renderSaved()
+    return true
   }
   function escClose(ev) { if (ev.key === 'Escape') closePanel() }
-  function closePanel() { cancelPreview(); _currentBgImage = null; _currentGlassOpacity = .08; _currentBlur = 20; const p = document.getElementById(PANEL_ID); if (p) p.remove(); document.removeEventListener('keydown', escClose, true) }
+  function settleConfigure() {
+    const resolve = configureResolve
+    configureResolve = null
+    if (resolve) resolve()
+  }
+  function closePanel() {
+    cancelPreview(); _currentBgImage = null; _currentGlassOpacity = .08; _currentBlur = 20
+    const p = document.getElementById(PANEL_ID); if (p) p.remove()
+    document.removeEventListener('keydown', escClose, true)
+    settleConfigure()
+  }
 
   // ── image handlers ──
   function handleBgUpload(ev) {
@@ -320,19 +319,43 @@
     })
   }
 
-  // ── install ──
-  function install(attempt) {
-    attempt = attempt || 0
-    if (document.querySelector('.rail')) {
-      ensureRailButton(); registerAll()
-      window.HermesThemeCreatorExtension = { version: '0.3.6', themes: loadThemes, open: openPanel, registerAll }
-      return true
-    }
-    if (attempt < 80) { setTimeout(() => install(attempt + 1), 150); return false }
-    console.warn('[' + EXT + '] rail not found; not installed')
-    return false
+  // ── Core Configure entry ──
+  function registerConfigureHook() {
+    const api = window.hermesExt
+    if (!api || typeof api.register !== 'function') return
+    let extension
+    try { extension = api.register(EXT) } catch (_) { return }
+    if (!extension || extension.id !== EXT) return
+    const settings = extension.settings
+    if (!settings || typeof settings.registerConfigure !== 'function') return
+    try {
+      settings.registerConfigure(() => new Promise(resolve => {
+        let active = true
+        const finish = () => {
+          if (!active) return
+          active = false
+          if (configureResolve === finish) configureResolve = null
+          resolve()
+        }
+        let opened = false
+        try { opened = openPanel() } catch (_) {}
+        configureResolve = finish
+        let panel
+        try { panel = document.getElementById(PANEL_ID) } catch (_) {}
+        if (!opened || !panel) settleConfigure()
+      }))
+    } catch (_) {}
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => install(), { once: true })
-  else install()
+  // ── initialize independent capabilities ──
+  function init() {
+    if (initialized) return
+    initialized = true
+    window.HermesThemeCreatorExtension = { version: '0.3.6', themes: loadThemes, open: openPanel, registerAll }
+    try { registerAll() } catch (_) {}
+    registerConfigureHook()
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true })
+  else init()
 })()

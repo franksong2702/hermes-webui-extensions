@@ -94,6 +94,39 @@ the fixture only controls its deterministic first (thenable) and second
 (intentional failure) handler outcomes. It does not contact a provider or claim
 durable/global event delivery.
 
+### Theme Creator Configure track
+
+`theme_creator_smoke.py` is a separate extension-owned track for the
+`theme-creator` entry. It uses the same pinned Core checkout and isolated,
+no-provider browser boundary as the other compatibility smokes, and writes its
+JSON, server, network, and screenshot evidence under the selected
+`COMPATIBILITY_EVIDENCE_DIR`. It does not certify the Core Configure
+implementation itself; the Core capability contract remains covered by the
+`capability-probe` fixture above.
+
+Against a Core build with the authenticated E0 Configure capability, the track
+runs at both a desktop viewport and 390x844 mobile viewport and requires:
+
+- exactly one Theme Creator **Configure** button under Settings → Extensions →
+  Installed and none under Diagnostics;
+- pending state before the second click, with the duplicate click suppressed;
+- each X, Escape, and backdrop close path to roll back an active live preview
+  before the Configure promise settles, return to a reusable button, and let
+  Core restore the opener focus exactly once;
+- no legacy Theme Creator rail control, no retry timer, and no unexpected
+  HTTP/WebSocket egress;
+- one preseeded valid saved theme to survive reload and register on Core's
+  native skin surface; closing a live preview leaves both the previous skin and
+  the stored collection unchanged.
+
+The track is an entry-level compatibility check, not a claim that every Core
+viewport, browser, or extension API is covered. If the pinned Core checkout is
+missing, setup is incomplete, or Playwright cannot launch, the smoke records a
+`harness_error` rather than reporting an extension failure. The Node contract
+(`scripts/test-theme-creator-configure.mjs`) separately covers old-Core
+fail-closed behavior and programmatic API/storage preservation; a real Core
+run is required for the Settings UI, focus, persistence, and no-egress claims.
+
 ## Local run
 
 Install the hash-locked Core/browser-smoke dependencies in an isolated
@@ -112,6 +145,7 @@ export COMPATIBILITY_EVIDENCE_DIR="$PWD/compatibility-evidence"
 python3.12 tests/compatibility/browser_smoke.py
 python3.12 tests/compatibility/capability_smoke.py
 python3.12 tests/compatibility/typography_smoke.py
+python3.12 tests/compatibility/theme_creator_smoke.py
 ```
 
 Each command exits `0` only when its positive and negative contracts pass. A
