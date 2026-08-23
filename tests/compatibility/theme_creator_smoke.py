@@ -259,6 +259,64 @@ def _close_panel(page: Any, method: str) -> None:
         raise AssertionError(f"unknown close method: {method}")
 
 
+def _assert_keyboard_modal(page: Any) -> None:
+    state = page.evaluate(
+        """selector => {
+          const panel = document.querySelector(selector);
+          const dialog = panel && panel.querySelector('[role="dialog"]');
+          const controls = panel ? Array.from(panel.querySelectorAll(
+            'button:not([disabled]), select:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+          )).filter(control => !control.hidden && control.getClientRects().length) : [];
+          return {
+            modal: dialog && dialog.getAttribute('aria-modal'),
+            initialFocusInName: !!(document.activeElement && document.activeElement.matches('.hwx-tc-name')),
+            controlCount: controls.length,
+          };
+        }""",
+        PANEL_SELECTOR,
+    )
+    if state.get("modal") != "true" or state.get("initialFocusInName") is not True:
+        raise CompatibilityFailure(f"Theme Creator modal/focus contract failed: {state!r}")
+    if state["controlCount"] < 2:
+        raise CompatibilityFailure(f"Theme Creator focus trap has too few controls: {state!r}")
+    page.evaluate(
+        """selector => {
+          const panel = document.querySelector(selector);
+          const controls = Array.from(panel.querySelectorAll(
+            'button:not([disabled]), select:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+          )).filter(control => !control.hidden && control.getClientRects().length);
+          controls[controls.length - 1].focus();
+        }""",
+        PANEL_SELECTOR,
+    )
+    page.keyboard.press("Tab")
+    forward_wrapped = page.evaluate(
+        """selector => {
+          const panel = document.querySelector(selector);
+          const controls = Array.from(panel.querySelectorAll(
+            'button:not([disabled]), select:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+          )).filter(control => !control.hidden && control.getClientRects().length);
+          return document.activeElement === controls[0];
+        }""",
+        PANEL_SELECTOR,
+    )
+    if not forward_wrapped:
+        raise CompatibilityFailure("Theme Creator forward Tab escaped the modal")
+    page.keyboard.press("Shift+Tab")
+    reverse_wrapped = page.evaluate(
+        """selector => {
+          const panel = document.querySelector(selector);
+          const controls = Array.from(panel.querySelectorAll(
+            'button:not([disabled]), select:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+          )).filter(control => !control.hidden && control.getClientRects().length);
+          return document.activeElement === controls[controls.length - 1];
+        }""",
+        PANEL_SELECTOR,
+    )
+    if not reverse_wrapped:
+        raise CompatibilityFailure("Theme Creator reverse Tab escaped the modal")
+
+
 def _exercise_configure(page: Any, screenshot: Path | None = None) -> dict[str, Any]:
     button = _open_extensions_installed(page)
     installed_buttons = page.locator(CONFIGURE_SELECTOR).count()
@@ -305,6 +363,24 @@ def _exercise_configure(page: Any, screenshot: Path | None = None) -> dict[str, 
             timeout=10_000,
         )
         if index == 0:
+            _assert_keyboard_modal(page)
+            reuse = page.evaluate(
+                """selector => {
+                  const before = document.querySelector(selector);
+                  window.HermesThemeCreatorExtension.open();
+                  const state = window.HermesExtensionSettings
+                    && window.HermesExtensionSettings._configureStateForExtension('theme-creator');
+                  return {
+                    samePanel: before === document.querySelector(selector),
+                    panelCount: document.querySelectorAll(selector).length,
+                    pending: !!(state && state.pending),
+                    focusedName: !!(document.activeElement && document.activeElement.matches('.hwx-tc-name')),
+                  };
+                }""",
+                PANEL_SELECTOR,
+            )
+            if reuse != {"samePanel": True, "panelCount": 1, "pending": True, "focusedName": True}:
+                raise CompatibilityFailure(f"Configure-owned programmatic reuse failed: {reuse!r}")
             page.evaluate("selector => document.querySelector(selector)?.click()", CONFIGURE_SELECTOR)
             page.wait_for_timeout(50)
             if page.locator(PANEL_SELECTOR).count() != 1:
@@ -320,6 +396,8 @@ def _exercise_configure(page: Any, screenshot: Path | None = None) -> dict[str, 
             page.screenshot(path=str(screenshot), full_page=True)
         _close_panel(page, method)
         _assert_settled(page, method)
+        if method == "escape" and not page.locator("#panelSettings").is_visible():
+            raise CompatibilityFailure("Escape propagated into Core and hid the Settings panel")
         skin_after_close = page.evaluate("() => document.documentElement.dataset.skin || 'default'")
         collection_after = page.evaluate("() => localStorage.getItem('hermes-ext-custom-themes')")
         if skin_after_close != "custom-saved":
@@ -339,6 +417,9 @@ def _exercise_configure(page: Any, screenshot: Path | None = None) -> dict[str, 
         "diagnostics_buttons": diagnostics_buttons,
         "pending_before_second_click": True,
         "second_click_suppressed": True,
+        "keyboard_modal_verified": True,
+        "configure_programmatic_reuse_verified": True,
+        "escape_preserved_settings": True,
         "close_settlements": close_settlements,
         "focus_restores": focus_restores,
         "stored_theme_collection_unchanged": True,

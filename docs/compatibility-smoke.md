@@ -110,9 +110,12 @@ runs at both a desktop viewport and 390x844 mobile viewport and requires:
 - exactly one Theme Creator **Configure** button under Settings → Extensions →
   Installed and none under Diagnostics;
 - pending state before the second click, with the duplicate click suppressed;
+- modal semantics, initial focus, forward/reverse Tab containment, and
+  Configure-owned programmatic `.open()` reuse without early settlement;
 - each X, Escape, and backdrop close path to roll back an active live preview
   before the Configure promise settles, return to a reusable button, and let
-  Core restore the opener focus exactly once;
+  Core restore the opener focus exactly once; Escape must also leave the Core
+  Settings panel visible;
 - no legacy Theme Creator rail control, no retry timer, and no unexpected
   HTTP/WebSocket egress;
 - one preseeded valid saved theme to survive reload and register on Core's

@@ -176,13 +176,29 @@
   }
   function showErr(msg) { const e = $('#' + PANEL_ID + ' .hwx-tc-err'); if (e) { e.hidden = !msg; e.textContent = msg || '' } }
 
+  const PANEL_FOCUSABLE = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+  function panelFocusableControls(panel) {
+    if (!panel || typeof panel.querySelectorAll !== 'function') return []
+    return Array.from(panel.querySelectorAll(PANEL_FOCUSABLE)).filter(control => {
+      if (!control || control.disabled || control.hidden) return false
+      return typeof control.getClientRects !== 'function' || control.getClientRects().length > 0
+    })
+  }
+  function focusPanel(panel) {
+    if (!panel) return
+    const name = $('.hwx-tc-name', panel)
+    const target = name && !name.disabled && !name.hidden ? name : panelFocusableControls(panel)[0]
+    if (target && typeof target.focus === 'function') target.focus()
+  }
   function openPanel() {
-    closePanel(); editing = null; _currentBgImage = null; _currentGlassOpacity = .08; _currentBlur = 20
+    const existing = document.getElementById(PANEL_ID)
+    if (existing) { focusPanel(existing); return true }
     if (!document.body) return false
+    editing = null; _currentBgImage = null; _currentGlassOpacity = .08; _currentBlur = 20
     const panel = document.createElement('div')
     panel.id = PANEL_ID; panel.className = 'hwx-tc-panel'
     panel.innerHTML =
-      '<div class="hwx-tc-card" role="dialog" aria-label="Theme Creator"><div class="hwx-tc-head">'
+      '<div class="hwx-tc-card" role="dialog" aria-modal="true" aria-label="Theme Creator"><div class="hwx-tc-head">'
       + '<span class="hwx-tc-title">Theme Creator</span>'
       + '<button type="button" class="hwx-tc-x" aria-label="Close">\u2715</button></div>'
       + (hasCap() ? '' : '<div class="hwx-tc-warn">The theme-registration capability isn\u2019t available in this WebUI build (needs core PR #5100). You can still design a theme, but it can\u2019t be applied yet.</div>')
@@ -190,11 +206,36 @@
     document.body.appendChild(panel)
     $('.hwx-tc-x', panel).addEventListener('click', closePanel)
     panel.addEventListener('click', e => { if (e.target === panel) closePanel() })
-    document.addEventListener('keydown', escClose, true)
+    document.addEventListener('keydown', panelKeydown, true)
     renderEditor(); renderSaved()
+    focusPanel(panel)
     return true
   }
-  function escClose(ev) { if (ev.key === 'Escape') closePanel() }
+  function panelKeydown(ev) {
+    const panel = document.getElementById(PANEL_ID)
+    if (!panel) return
+    if (ev.key === 'Escape') {
+      ev.preventDefault()
+      ev.stopPropagation()
+      closePanel()
+      return
+    }
+    if (ev.key !== 'Tab') return
+    const focusable = panelFocusableControls(panel)
+    if (!focusable.length) return
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (!panel.contains(document.activeElement)) {
+      ev.preventDefault()
+      const target = ev.shiftKey ? last : first
+      target.focus()
+      return
+    }
+    if (ev.shiftKey && document.activeElement === first) {
+      ev.preventDefault(); last.focus()
+    } else if (!ev.shiftKey && document.activeElement === last) {
+      ev.preventDefault(); first.focus()
+    }
+  }
   function settleConfigure() {
     const resolve = configureResolve
     configureResolve = null
@@ -203,7 +244,7 @@
   function closePanel() {
     cancelPreview(); _currentBgImage = null; _currentGlassOpacity = .08; _currentBlur = 20
     const p = document.getElementById(PANEL_ID); if (p) p.remove()
-    document.removeEventListener('keydown', escClose, true)
+    document.removeEventListener('keydown', panelKeydown, true)
     settleConfigure()
   }
 

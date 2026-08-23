@@ -138,6 +138,7 @@ function makeHarness({
       },
       contains(candidate) {
         if (candidate === this) return true;
+        if ([...queryCache.values()].includes(candidate)) return true;
         return Boolean(findDescendant(this, (node) => node === candidate));
       },
       getClientRects() { return this.isConnected ? [{}] : []; },
@@ -158,6 +159,9 @@ function makeHarness({
         return queryCache.get(selector);
       },
       querySelectorAll(selector) {
+        if (selector.includes('button:not([disabled])')) {
+          return ['.hwx-tc-x', '.hwx-tc-name', '.hwx-tc-save'].map((item) => this.querySelector(item));
+        }
         const match = this.querySelector(selector);
         return match ? [match] : [];
       },
@@ -377,6 +381,80 @@ guard.evaluateAgain();
 assert.deepEqual(guard.registrations, [EXTENSION_ID], 'load guard prevents duplicate E0 registration');
 assert.equal(guard.configureHandlers.length, 1, 'load guard prevents duplicate Configure registration');
 assert.equal(guard.timers.length, 0, 'load guard does not create retry timers');
+
+const keyboard = makeHarness({ configure: true, rail: true });
+const keyboardCore = invokeConfigure(keyboard);
+assert.equal(keyboardCore.invoke(), true, 'keyboard probe opens Configure');
+const keyboardPanel = keyboard.document.getElementById(PANEL_ID);
+assert.ok(keyboardPanel.innerHTML.includes('aria-modal="true"'), 'editor dialog declares modal semantics');
+const nameInput = keyboardPanel.querySelector('.hwx-tc-name');
+assert.equal(keyboard.document.activeElement, nameInput, 'editor takes initial focus');
+const focusable = keyboardPanel.querySelectorAll('button:not([disabled]), select:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])');
+const firstFocusable = focusable[0];
+const lastFocusable = focusable[focusable.length - 1];
+lastFocusable.focus();
+let tabPrevented = false;
+keyboard.document.dispatchEvent({
+  type: 'keydown', key: 'Tab', shiftKey: false,
+  preventDefault() { tabPrevented = true; }, stopPropagation() {},
+});
+assert.equal(tabPrevented, true, 'forward Tab is consumed at the end of the dialog');
+assert.equal(keyboard.document.activeElement, firstFocusable, 'forward Tab wraps to the first control');
+firstFocusable.focus();
+let shiftTabPrevented = false;
+keyboard.document.dispatchEvent({
+  type: 'keydown', key: 'Tab', shiftKey: true,
+  preventDefault() { shiftTabPrevented = true; }, stopPropagation() {},
+});
+assert.equal(shiftTabPrevented, true, 'Shift+Tab is consumed at the start of the dialog');
+assert.equal(keyboard.document.activeElement, lastFocusable, 'Shift+Tab wraps to the last control');
+keyboardPanel.querySelector('.hwx-tc-x').click();
+await keyboardCore.result;
+
+const escapeIsolation = makeHarness({ configure: true, rail: true });
+const settingsPanel = escapeIsolation.document.createElement('section');
+settingsPanel.id = 'panelSettings';
+settingsPanel.hidden = false;
+escapeIsolation.body.appendChild(settingsPanel);
+const escapeCore = invokeConfigure(escapeIsolation);
+assert.equal(escapeCore.invoke(), true, 'Escape probe opens Configure');
+let escapePrevented = false;
+let escapeStopped = false;
+escapeIsolation.document.dispatchEvent({
+  type: 'keydown', key: 'Escape',
+  preventDefault() { escapePrevented = true; },
+  stopPropagation() { escapeStopped = true; },
+});
+if (!escapeStopped) settingsPanel.remove();
+assert.equal(escapePrevented, true, 'Escape prevents the Core default key path');
+assert.equal(escapeStopped, true, 'Escape does not propagate into Core Settings');
+assert.equal(settingsPanel.isConnected, true, 'Escape leaves the Core Settings panel visible');
+assert.equal(settingsPanel.hidden, false, 'Escape does not hide the Core Settings panel');
+await escapeCore.result;
+
+const configureThenProgrammatic = makeHarness({ configure: true, rail: true });
+const configureThenProgrammaticCore = invokeConfigure(configureThenProgrammatic);
+assert.equal(configureThenProgrammaticCore.invoke(), true, 'Configure opens before programmatic reuse');
+const configureOwnedPanel = configureThenProgrammatic.document.getElementById(PANEL_ID);
+configureThenProgrammatic.extension.open();
+assert.equal(configureThenProgrammatic.document.getElementById(PANEL_ID), configureOwnedPanel,
+  'programmatic open reuses the Configure-owned panel');
+await Promise.resolve();
+assert.equal(configureThenProgrammaticCore.pending, true,
+  'programmatic reuse does not settle Configure while its editor remains visible');
+configureOwnedPanel.querySelector('.hwx-tc-x').click();
+await configureThenProgrammaticCore.result;
+
+const programmaticThenConfigure = makeHarness({ configure: true, rail: true });
+programmaticThenConfigure.extension.open();
+const programmaticPanel = programmaticThenConfigure.document.getElementById(PANEL_ID);
+const programmaticThenConfigureCore = invokeConfigure(programmaticThenConfigure);
+assert.equal(programmaticThenConfigureCore.invoke(), true, 'Configure adopts an existing programmatic editor');
+assert.equal(programmaticThenConfigure.document.getElementById(PANEL_ID), programmaticPanel,
+  'Configure reuses rather than replaces the programmatic editor');
+assert.equal(programmaticThenConfigureCore.pending, true, 'adopted editor owns the Configure pending lifecycle');
+programmaticPanel.querySelector('.hwx-tc-x').click();
+await programmaticThenConfigureCore.result;
 
 for (const route of ['x', 'escape', 'backdrop']) {
   const harness = makeHarness({ configure: true, rail: true });

@@ -184,6 +184,10 @@ Manual verification (on a WebUI build with the E0 Configure and PR #5100 capabil
 - themes persist across a reload and re-register into the picker on load
 - X, Escape, and backdrop close paths roll back an active preview before the
   Configure promise settles; Core restores the Configure opener focus once
+- the editor declares modal semantics, focuses the name field, contains
+  forward/reverse Tab navigation, and consumes Escape without closing Settings
+- programmatic `.open()` reuses a visible editor in both Configure-first and
+  programmatic-first flows without settling Configure early
 - on an older Core without `hermesExt/registerConfigure`, no rail or retry timer
   appears and the programmatic API remains usable
 
